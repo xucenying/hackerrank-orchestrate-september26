@@ -1,16 +1,18 @@
-# --- Core data handling ---
+# --- Agent framework (pins openai==1.107.1 transitively) ---
+picoagents==0.5.0
+
+# --- Typed models / structured output ---
+pydantic>=2.0
+
+# --- Data handling ---
 pandas>=2.0
-numpy>=1.24
 
-# --- Agent framework ---
-picoagents
-picoagents[rag]
+# --- Image loading for evidence extraction ---
+pillow>=10.0
 
-# --- Notebook environment ---
-python-dotenv
-ipykernel
-dotenv
+# --- Config ---
+python-dotenv>=1.0
 
-# --- Web interface ---
-fastapi
-uvicorn
+# --- Testing ---
+pytest>=8.0
+pytest-asyncio>=0.23
