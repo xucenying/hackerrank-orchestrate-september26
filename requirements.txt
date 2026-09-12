@@ -1,0 +1,16 @@
+# --- Core data handling ---
+pandas>=2.0
+numpy>=1.24
+
+# --- Agent framework ---
+picoagents
+picoagents[rag]
+
+# --- Notebook environment ---
+python-dotenv
+ipykernel
+dotenv
+
+# --- Web interface ---
+fastapi
+uvicorn
