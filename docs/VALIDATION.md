@@ -421,3 +421,41 @@ item, batch size 1 disabling batching).
 Decision fields are identical to the unbatched run (status 20/25, method 22/25, plan 19/25,
 earliest 18/25, changes 22/25, safe amount within 10% 13/25). Explanations remain model-written
 and grounded on all 25 rows.
+
+---
+
+## Part 7 — Final submission run (2026-09-13)
+
+Configuration frozen before this run: evidence and explanation agents on `gpt-5.6-luna`,
+no reasoning override; forecast knobs `income_mode=fixed_only` with the stable-salary rescue,
+`amount_stat=median`, `include_submonthly=True`, `generic_interval=False`,
+`project_discretionary_variable=True`, `front_load=none`, `expense_scale=1`,
+`SAFETY_FROM_DAY_ZERO=True`; evidence batches of 4, explanation batches of 8.
+
+```
+.venv\Scripts\python.exe code/main.py --clear-cache --concurrency 8
+```
+
+| Item | Result |
+|---|---|
+| Rows written to `output.csv` | 250, exact columns, input order preserved |
+| `0 <= amount_safe_to_pay <= requested_amount` | holds on all 250 |
+| Fallback rows / validator repairs / exceptions | 0 / 0 / 0 |
+| Empty or fallback-text explanations | 0 |
+| Model calls | 93 (82 batched, covering 448 items) |
+| Failed calls / retries / batch fallbacks | 0 / 0 / 0 |
+| Tokens | 444,827 in / 84,831 out; 529,658 total, 2,119 per request |
+| Estimated cost | USD 0.1908 total, USD 0.000763 per request |
+| Wall time | 114 s at concurrency 8 |
+
+Output distribution: `not_affordable` 74, `affordable_with_plan` 68, `affordable_now` 64,
+`affordable_later` 44; methods `not_recommended` 74, `full_payment` 69, `installments` 55,
+`wait` 44, `partial_payment` 8.
+
+Compared with the pre-fix run of the same dataset, the stable-salary rescue moved 17 requests out
+of `not_affordable` (91 → 74) and batching plus the compact prompt cut model calls from 459 to 93
+and cost from USD 0.338 to USD 0.191.
+
+Ledger: `code/.runs/20260913T085313Z/`. `code.zip` rebuilt from this run (55 files, 151 KB,
+verified to contain `code/main.py`, both prompts, `code/README.md`, `requirements.txt` and
+`code/evaluation/usage_report.md`, and to exclude `.env`).

@@ -71,6 +71,16 @@ their descriptions vary per purchase ("Bulk pantry shop", "Local market purchase
   within 0.1%; alternatives to test are the median and the maximum, which is the most
   conservative).
 
+**Stable-salary rescue.** The generic cadence test drops two real payroll shapes: a missed month
+(unpaid leave, e.g. March, April, then July, a 91-day gap) and a new job with only two payslips.
+Dropping them leaves the user with **no income at all** for 90 days, which produced impossible
+negative balances (samples 08, 14, 15 projected the account below zero). A salary is therefore
+also projected when every occurrence has the same home-currency amount on the same day-of-month,
+category `salary`, at least two occurrences, and no income-ending keyword
+(`stable_salary_rescue`, `_stable_salary_pattern`). Measured effect across all 275 requests:
+requests with zero projected income 77 → 55, self-breaching base paths 43 → 22; on the samples,
+earliest date 18 → 19 and safe amount within 10% 14 → 15, with status and method unchanged.
+
 **Recurring income.** Payroll-like patterns (`event_type = income`, category `salary`, monthly
 cadence, ≥ 3 occurrences) are projected like expenses. Evidence: sample user_19 has no scheduled
 "Next confirmed salary" row, yet the solved answer's earliest date is the salary day, so
@@ -176,7 +186,7 @@ Settings frozen after comparing the deterministic pipeline with the 25 solved sa
 | `income_mode` | `fixed_only` | Only monthly payroll patterns with a stable level are projected: all amounts equal, or a step change whose last two amounts are equal (the new level is projected, e.g. a reduced payroll), or relative std-dev ≤ 10% (median). Variable weekly platform payouts (user_10), twice-monthly freelance invoices, and variable secondary income (user_13) are not "confirmed salary"; projecting them contradicted the samples. The step-change rule was added after a review found 94 of 275 users left with no income at all; it brought that to 77 (freelance/gig/ended) and improved sample earliest dates to 18/25. |
 | `final_keyword_ends_income` | `True` | user_05's last payroll row is labelled "Final employer payroll"; the sample treats income as ended. |
 | scheduled salary projection | on | A scheduled "Next confirmed salary" row is projected forward monthly when history shows no fixed pattern (user_01: prorated first salary then a confirmed amount; the sample needs three salaries). |
-| `amount_stat` | `median` | Best earliest-date agreement (17/25) among mean-recent, mean-all, median, max, last. |
+| `amount_stat` | `median` | Best on every measure among median, mean of the recent 90 days, mean of all history, last occurrence and max. Re-tested 2026-09-13 with the full pipeline: status and method 20/25 for median and both means, but earliest date 19 (median) vs 18 (either mean), safe within 5% 11 vs 9 (mean-recent), within 10% 14 vs 13 (mean-all), median relative error 8.5% vs 9.4-9.6%. Neither mean changes any status; they are simply slightly less accurate. `last` and `max` are worse still. |
 | `include_submonthly` | `True` | Weekly/biweekly essentials are projected; excluding them improved a few safe amounts but lost earliest dates. |
 | safety check start | first payment date | A payment only affects days on or after its date, so a projected breach before the first payment is not attributed to the plan. |
 
@@ -205,6 +215,9 @@ pipeline (48 combinations). Outcome:
 | Weekly/biweekly patterns as one monthly lump | `submonthly_as_monthly=True` | **no** | earliest 18→15, safe within 10% 14→7 |
 | Maximum instead of median for variable amounts | `amount_stat=max` | **no** | both 20→17, earliest 18→14 |
 | Monthly anchor day = most common day of the last four occurrences, so a moved payroll (user_07: 15th → 23rd, announced by message and visible in history) was still projected on the 15th | `monthly_anchor=last` (newest record wins, per the conflict rules) | yes | earliest 18→19 (request_07 now exact), nothing lost |
+| Most conservative estimates: variable spending at its historical **maximum** and a wobbling salary at its **minimum** | `amount_stat=max`, `salary_wobble_stat=min` | **no** | status and method 20→17, earliest 19→15, safe within 10% 14→11; three users (04, 22, 23) flip to `not_affordable` where the sample says otherwise. Max spending overshoots the organizers' figures, which are already below ours. |
+| Round the variable-spending estimate toward a "nicer" number, on the theory that the generator held round targets | rounding to the nearest half-magnitude, 2 significant digits, or 1 significant digit | **no** | the generator's observable fixed targets are not round (18% carry cents, e.g. 1821.60, 235.40, 306.90), and rounding scored the same or worse: 2 significant digits gave status+method 20 (unchanged), earliest 18 vs 19, median error 8.2% vs 8.5%; coarser rounding was clearly worse |
+| Generic-interval cadence: project any consistently spaced series, not just weekly/biweekly/monthly. The dataset really does contain 10-day grocery and 21-day dining/transport rhythms that the named buckets drop, affecting 158 of 275 requests | `generic_interval` (implemented, `_interval_days`, `INTERVAL`) | **no** | at description level it fragments a category into rotating shop names (status+method 20→16); restricted to category level it is still worse (20→18, safe within 10% 15→13). The organizers' figures are apparently *lower* than ours already, so adding the missing categories moves the wrong way. Kept off; the code stays for hidden-set experimentation. |
 | Uniform expense scale 0.85–1.20 as a stand-in for the unknown convention | `expense_scale` | **no** (kept at 1) | none of 08/11/13/21 flips at any scale; only 06 flips at 0.95 at the cost of four safe-amount matches |
 | Charge a month of every recurring expense at the start of each 30/31-day block, before that block's income (suggested by the user_21 and user_13 back-solves) | `front_load=block_all` / `block_one` | **no** | block_all: both 20→15, earliest 18→12; block_one: both 20→18, earliest 18→15, safe within 10% 14→8 |
 

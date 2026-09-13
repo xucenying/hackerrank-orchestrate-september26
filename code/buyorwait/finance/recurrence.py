@@ -21,12 +21,20 @@ from .reconciliation import Ledger, ReconciledEvent
 MONTHLY = "monthly"
 BIWEEKLY = "biweekly"
 WEEKLY = "weekly"
+INTERVAL = "interval"  # any other consistent spacing, e.g. the dataset's 10-day and 21-day rhythms
 _CADENCES = (
     (MONTHLY, 3, 26, 33),
     (BIWEEKLY, 4, 12, 16),
     (WEEKLY, 4, 5, 9),
 )
 _GAP_FRACTION = 0.75  # at least this share of gaps must fall in the cadence range
+# Generic-interval detection. The named buckets above miss real rhythms in this dataset:
+# groceries every ~10 days (128 patterns) and dining/transport every ~21 days (148 patterns)
+# fall between weekly and monthly and were dropped entirely, under-projecting spending.
+INTERVAL_MIN_DAYS = 4
+INTERVAL_MAX_DAYS = 45
+INTERVAL_MIN_OCCURRENCES = 3
+INTERVAL_TOLERANCE = 0.35  # a gap counts as "on rhythm" within +/- 35% of the median gap
 VARIABLE_ESSENTIALS = frozenset({"groceries", "transport", "utilities", "healthcare", "dining", "shopping"})
 RECENT_DAYS = 90  # amount estimate window for variable patterns (to calibrate)
 
@@ -43,6 +51,12 @@ CALIB: dict = {
     "front_load_block_days": 30,
     "expense_scale": "1",                    # multiply every projected recurring expense (calibration lever; 1 = off)
     "monthly_anchor": "last",                # last | mode : day-of-month used to project monthly patterns
+    "salary_wobble_stat": "median",          # median | min : level projected for a salary that varies within SALARY_MAX_CV
+    "stable_salary_rescue": True,            # project a salary whose amounts repeat on a fixed day-of-month even when
+                                             # the cadence test fails (a missed month) or only two payslips exist
+    "stable_salary_min_occurrences": 2,
+    "generic_interval": False,               # detect any consistent spacing (10-day, 21-day) the named cadences miss;
+                                             # tested 2026-09-13 and rejected, see docs/forecast_rules.md §12
 }
 # Essential spending the spec asks to forecast conservatively even when the amount varies.
 ESSENTIAL_CATEGORIES = frozenset({
@@ -72,6 +86,8 @@ def _salary_level(p: "RecurringPattern") -> Optional[Decimal]:
     if mean > 0:
         var = sum((a - mean) ** 2 for a in amounts) / len(amounts)
         if (var.sqrt() / mean) <= Decimal(str(SALARY_MAX_CV)):
+            if CALIB.get("salary_wobble_stat", "median") == "min":
+                return min(amounts)  # conservative: assume the lowest observed payslip recurs
             return Decimal(str(statistics.median([float(a) for a in amounts])))
     return None
 
@@ -131,7 +147,11 @@ class RecurringPattern:
         return self.last.event.description
 
 
-def _detect_cadence(dates: list[date]) -> Optional[str]:
+def _detect_cadence(dates: list[date], allow_interval: bool = True) -> Optional[str]:
+    """Cadence of a series. ``allow_interval`` is False for description-level groups: a generic
+    interval there would split one category (groceries under three rotating shop names) into
+    several sub-patterns, which fragments the projection. Intervals are only detected once the
+    whole category is grouped together."""
     if len(dates) < 3:
         return None
     gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
@@ -141,7 +161,25 @@ def _detect_cadence(dates: list[date]) -> Optional[str]:
         inside = sum(1 for g in gaps if lo <= g <= hi)
         if inside / len(gaps) >= _GAP_FRACTION and lo <= statistics.median(gaps) <= hi:
             return name
+    if allow_interval and CALIB.get("generic_interval", True):
+        return INTERVAL if _interval_days(dates) else None
     return None
+
+
+def _interval_days(dates: list[date]) -> Optional[int]:
+    """Median spacing of a series that repeats on a consistent rhythm the named cadences miss."""
+    if len(dates) < INTERVAL_MIN_OCCURRENCES:
+        return None
+    gaps = [(dates[i + 1] - dates[i]).days for i in range(len(dates) - 1)]
+    if not gaps:
+        return None
+    med = statistics.median(gaps)
+    if not (INTERVAL_MIN_DAYS <= med <= INTERVAL_MAX_DAYS):
+        return None
+    tol = max(2.0, med * INTERVAL_TOLERANCE)
+    if sum(1 for g in gaps if abs(g - med) <= tol) / len(gaps) < _GAP_FRACTION:
+        return None
+    return int(round(med))
 
 
 def _amount_for(occ: list[ReconciledEvent], request_date: date) -> Decimal:
@@ -175,8 +213,18 @@ def _add_months(d: date, months: int, day: int) -> date:
     return date(y, m, min(day, calendar.monthrange(y, m)[1]))
 
 
-def _project(cadence: str, last: date, start: date, end: date, anchor_day: int) -> list[date]:
+def _project(cadence: str, last: date, start: date, end: date, anchor_day: int, interval: Optional[int] = None) -> list[date]:
     out = []
+    if cadence == INTERVAL:
+        step = interval or 0
+        if step <= 0:
+            return out
+        d = last + timedelta(days=step)
+        while d <= end:
+            if d >= start:
+                out.append(d)
+            d += timedelta(days=step)
+        return out
     if cadence == MONTHLY:
         k = 1
         while True:
@@ -196,6 +244,34 @@ def _project(cadence: str, last: date, start: date, end: date, anchor_day: int) 
     return out
 
 
+def _stable_salary_pattern(hist: list[ReconciledEvent], ctx) -> Optional[RecurringPattern]:
+    """Rescue a monthly salary that the generic cadence test rejects.
+
+    The dataset contains payrolls that pay the same amount on the same day of the month but
+    that the cadence test drops: a missed month (unpaid leave, e.g. March, April, then July)
+    makes a 91-day gap, and a new job supplies only two payslips. Both are unambiguous salaries,
+    and dropping them leaves the user with no income at all for 90 days, which is never right.
+
+    Conditions (deliberately strict): every occurrence has the same home-currency amount, the
+    same day-of-month, category ``salary``, and there are at least
+    ``stable_salary_min_occurrences`` of them.
+    """
+    sal = [r for r in hist if r.direction is Direction.CREDIT and r.event.category == "salary" and r.home_amount is not None]
+    if len(sal) < int(CALIB.get("stable_salary_min_occurrences", 2)):
+        return None
+    if len({r.home_amount for r in sal}) != 1 or len({r.effective_date.day for r in sal}) != 1:
+        return None
+    if CALIB["final_keyword_ends_income"] and any(w in r.event.description.lower() for r in sal for w in _END_WORDS):
+        return None
+    sal.sort(key=lambda r: (r.effective_date, r.event_id))
+    last = sal[-1]
+    key = (last.event.event_type, "salary", Direction.CREDIT, "stable_salary")
+    return RecurringPattern(
+        key=key, cadence=MONTHLY, occurrences=sal, amount=sal[0].home_amount,
+        projected=_project(MONTHLY, last.effective_date, ctx.horizon_start, ctx.horizon_end, last.effective_date.day),
+    )
+
+
 def detect_patterns(ledger: Ledger) -> list[RecurringPattern]:
     ctx = ledger.ctx
     start, end = ctx.horizon_start, ctx.horizon_end
@@ -211,7 +287,7 @@ def detect_patterns(ledger: Ledger) -> list[RecurringPattern]:
         groups.setdefault((r.event.event_type, r.event.category, r.direction, normalize_description(r.event.description)), []).append(r)
     for key, occ in groups.items():
         occ.sort(key=lambda r: (r.effective_date, r.event_id))
-        cad = _detect_cadence([o.effective_date for o in occ])
+        cad = _detect_cadence([o.effective_date for o in occ], allow_interval=False)
         if cad:
             patterns.append(_make(key, cad, occ, ctx.request.request_date, start, end))
             used.update(o.event_id for o in occ)
@@ -230,6 +306,10 @@ def detect_patterns(ledger: Ledger) -> list[RecurringPattern]:
             used.update(o.event_id for o in occ)
 
     patterns = [p for p in patterns if _keep(p, hist, ctx)]
+    if CALIB.get("stable_salary_rescue", True) and not any(p.is_income and p.category == "salary" for p in patterns):
+        rescued = _stable_salary_pattern(hist, ctx)
+        if rescued is not None:
+            patterns.append(rescued)
     patterns.sort(key=lambda p: (p.direction.value, p.category, p.event_id))
     return patterns
 
@@ -268,9 +348,11 @@ def _make(key, cad, occ, request_date, start, end) -> RecurringPattern:
         days = [o.effective_date.day for o in occ[-4:]]
         anchor_day = max(set(days), key=days.count)
     amount = _amount_for(occ, request_date)
-    projected = _project(cad, last_date, start, end, anchor_day)
+    interval = _interval_days([o.effective_date for o in occ]) if cad == INTERVAL else None
+    projected = _project(cad, last_date, start, end, anchor_day, interval)
     if cad != MONTHLY and CALIB["submonthly_as_monthly"] and occ[-1].direction is Direction.DEBIT:
-        amount = amount * (Decimal(52) if cad == WEEKLY else Decimal(26)) / Decimal(12)
+        per_year = {WEEKLY: Decimal(52), BIWEEKLY: Decimal(26)}.get(cad, Decimal(365) / Decimal(interval or 30))
+        amount = amount * per_year / Decimal(12)
         projected = _project(MONTHLY, last_date, start, end, last_date.day)
     pattern = RecurringPattern(
         key=key, cadence=cad, occurrences=occ, amount=amount, projected=projected,
