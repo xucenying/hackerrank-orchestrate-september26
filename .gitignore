@@ -11,3 +11,8 @@ venv/
 
 # agent session log (never committed)
 log.txt
+
+# model output cache and run logs
+code/.cache/
+code/.runs/
+code/evaluation/sample_output.csv

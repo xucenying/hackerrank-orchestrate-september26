@@ -243,6 +243,11 @@ tests/
 
 This follows the CLAUDE.md conceptual layout and the README's `code/main.py` entry point.
 
+*Implementation note (2026-09-13):* the modules live under `code/buyorwait/` (a top-level module
+named `code` would shadow the standard library), `safe_amount`/`earliest_date` are functions in
+`finance/forecast.py`, ranking lives in `policy/decision_policy.py`, and the tests are in
+`code/tests/`. Everything else matches the layout above.
+
 ---
 
 ## 5. Agent Responsibilities (exactly two agents)
@@ -351,7 +356,6 @@ B(t) = B0
      - Σ reserved pending/scheduled debits with settlement ≤ t
      + Σ confirmed income with settlement ≤ t        (scheduled "Next confirmed salary", settled future credits)
      - Σ projected recurring expenses with date ≤ t
-     ± evidence amendments
 ```
 
 Recurrence detection (per user, on settled history in the 180 days before `request_date`):
