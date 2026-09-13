@@ -79,6 +79,12 @@ date are dropped. Candidates: the explicit `related_event_id` plus rows linked t
 the user's events in the 90 days before the message up to the horizon end, capped at 40, always
 including pending, scheduled, and blank-amount rows.
 
+*Cap tested (2026-09-13):* raising `MAX_CANDIDATES` from 40 to unlimited grows the average
+candidate list from 39.2 to 51.9 rows (max 72) and the evidence prompt by about 30%
+(57,917 vs 52,659 input tokens on the 25 samples), and changes **no** output field. The extra
+rows are the oldest settled routine history in the window, which no message describes; sources
+that name a `related_event_id` (55 of 231) never use the window at all. Kept at 40.
+
 **Files.**
 - `code/buyorwait/data/context.py` — `build_context`, `RequestContext`, `EventView`, `EvidenceSource`
 - `code/tests/test_context.py`

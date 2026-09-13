@@ -372,3 +372,39 @@ def test_date_only_income_change_shifts_salary(rich):
     assert date(2026, 2, 15) in inc  # before the change: unchanged
     assert all(d.day == 23 for d in inc if d >= date(2026, 3, 23))
     assert st.flows and all(f.amount > 0 for f in st.flows if f.kind == "projected_income")
+
+
+def test_stable_salary_rescued_when_cadence_test_fails(tmp_path: Path):
+    """A payroll that pays the same amount on the same day-of-month must be projected even when
+    a month is missed (unpaid leave) or only two payslips exist. Dropping it left the user with
+    no income for 90 days, which produced impossible negative balances (samples 14 and 15)."""
+    rows = [dict(r) for r in SYNTHETIC["financial_events.csv"] if r["user_id"] == "user_B"]
+    base = dict(event_id="", user_id="user_A", event_type="income", description="Payroll before leave",
+                category="salary", direction="credit", amount="700", currency="INR", settlement_date="",
+                status="settled", linked_event_id="", flexibility="fixed", minimum_allowed_amount="")
+    for eid, d in (("event_s1", "2025-10-15"), ("event_s2", "2025-11-15"), ("event_s3", "2026-01-15")):  # December missed
+        rows.append({**base, "event_id": eid, "event_date": d, "settlement_date": d})
+    rows.append(dict(event_id="event_r", user_id="user_A", event_type="expense", description="Rent", category="rent",
+                     direction="debit", amount="300", currency="INR", event_date="2026-01-04", settlement_date="2026-01-04",
+                     status="settled", linked_event_id="", flexibility="fixed", minimum_allowed_amount=""))
+    d = write_synthetic(tmp_path, {"financial_events.csv": rows,
+                                   "images.csv": [{"image_id": "image_1", "user_id": "user_B", "request_id": "request_B", "related_event_id": "event_5"}]})
+    ds = load_dataset(d)
+    st = build_state(reconcile(build_context(ds, ds.request_by_id["request_A"]), []))
+    inc = [f for f in st.flows if f.kind == "projected_income"]
+    assert inc, "a stable salary with a missed month must still be projected"
+    assert all(f.on.day == 15 and f.amount == D(700) for f in inc)
+
+
+def test_stable_salary_rescue_does_not_fire_on_variable_income(tmp_path: Path):
+    rows = [dict(r) for r in SYNTHETIC["financial_events.csv"] if r["user_id"] == "user_B"]
+    base = dict(event_id="", user_id="user_A", event_type="income", description="Gig payout", category="salary",
+                direction="credit", currency="INR", settlement_date="", status="settled", linked_event_id="",
+                flexibility="fixed", minimum_allowed_amount="")
+    for eid, d, amt in (("event_g1", "2025-11-15", "500"), ("event_g2", "2025-12-15", "900")):
+        rows.append({**base, "event_id": eid, "event_date": d, "settlement_date": d, "amount": amt})
+    d = write_synthetic(tmp_path, {"financial_events.csv": rows,
+                                   "images.csv": [{"image_id": "image_1", "user_id": "user_B", "request_id": "request_B", "related_event_id": "event_5"}]})
+    ds = load_dataset(d)
+    st = build_state(reconcile(build_context(ds, ds.request_by_id["request_A"]), []))
+    assert not [f for f in st.flows if f.kind == "projected_income"]

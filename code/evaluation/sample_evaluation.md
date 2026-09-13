@@ -1,6 +1,6 @@
 # Sample evaluation
 
-Mode: llm | requests: 25
+Mode: no-llm | requests: 25
 
 | Field | Exact matches |
 |---|---|
@@ -8,22 +8,21 @@ Mode: llm | requests: 25
 | affordability_status | 20/25 |
 | recommended_payment_method | 22/25 |
 | payment_plan | 19/25 |
-| earliest_date_for_full_payment | 18/25 |
+| earliest_date_for_full_payment | 19/25 |
 | spending_changes_needed | 22/25 |
-| amount_safe_to_pay within 10% | 13/25 |
+| amount_safe_to_pay within 10% | 15/25 |
 
 Rows with status AND method correct: 20/25
 Fallback rows: 0 | repaired rows: 0
 
 ### request_01  OK
 - all fields match
-- explanation (ours): Pay ZAR 25,256 today. This leaves at least ZAR 18,000 available.
+- explanation (ours): Pay ZAR 25,256 today. This leaves at least ZAR 18,000 available over the next 90 days.
 - explanation (gt): Pay ZAR 25,256 today. This leaves at least ZAR 18,000 available over the next 90 days.
 
 ### request_02  MISS
 - amount_safe_to_pay: ours='20118009.39' gt='17229139.2'
-- earliest_date_for_full_payment: ours='2025-08-15' gt='2025-09-15'
-- explanation (ours): Use 3 installments of IDR 15,952,906.67, starting 8 August 2025. This protects the minimum balance of IDR 29,158,400.
+- explanation (ours): Use 3 installments of IDR 15,952,906.67, starting 8 August 2025. This leaves at least IDR 29,158,400 available.
 - explanation (gt): Use 3 installments of IDR 15,952,906.67, starting 8 August 2025. This leaves at least IDR 29,158,400 available.
 
 ### request_03  MISS
@@ -49,7 +48,7 @@ Fallback rows: 0 | repaired rows: 0
 - recommended_payment_method: ours='not_recommended' gt='full_payment'
 - payment_plan: ours='none' gt='2026-01-03:620.40'
 - spending_changes_needed: ours='none' gt='stop:event_476'
-- explanation (ours): Do not make this payment by 14 January 2026. The EUR 620.40 request cannot be completed while keeping the EUR 800 minimum balance protected.
+- explanation (ours): Do not proceed with the EUR 620.40 request. Although EUR 592.43 is available today, the full amount cannot be completed safely within 90 days.
 - explanation (gt): Stop the family streaming plan, then pay EUR 620.40 today. This leaves at least EUR 800 available.
 
 ### request_07  MISS
@@ -68,7 +67,7 @@ Fallback rows: 0 | repaired rows: 0
 
 ### request_09  OK
 - all fields match
-- explanation (ours): Pay EUR 166.61 today. This protects the EUR 600 minimum balance.
+- explanation (ours): Pay EUR 166.61 today. This leaves at least EUR 600 available over the next 90 days.
 - explanation (gt): Pay EUR 166.61 today. This keeps the EUR 600 minimum available over the next 90 days.
 
 ### request_10  MISS
@@ -81,7 +80,7 @@ Fallback rows: 0 | repaired rows: 0
 - affordability_status: ours='affordable_now' gt='affordable_with_plan'
 - earliest_date_for_full_payment: ours='2025-05-03' gt='2025-07-15'
 - spending_changes_needed: ours='none' gt='reduce_to:event_989:665950'
-- explanation (ours): Pay IDR 13,110,000 today. This protects the minimum balance of IDR 34,140,600.
+- explanation (ours): Pay IDR 13,110,000 today. This leaves at least IDR 34,140,600 available over the next 90 days.
 - explanation (gt): Reduce the weekend food delivery to IDR 665,950, then pay IDR 13,110,000 today. This leaves at least IDR 34,140,600 available.
 
 ### request_12  OK
@@ -99,13 +98,13 @@ Fallback rows: 0 | repaired rows: 0
 - explanation (gt): Pay EUR 941.60 in full on 15 May 2024. Paying earlier would take the balance below the EUR 1,300 minimum.
 
 ### request_14  MISS
-- amount_safe_to_pay: ours='0' gt='597.74'
-- explanation (ours): Do not make this payment by 4 October 2025. None of the available options keeps the EUR 2,200 minimum protected.
+- amount_safe_to_pay: ours='628.21' gt='597.74'
+- explanation (ours): Do not proceed with the EUR 5,414.20 request. Although EUR 628.21 is available today, the full amount cannot be completed safely within 90 days.
 - explanation (gt): Do not proceed with the EUR 5,414.20 request. Although EUR 597.74 is available today, the full amount cannot be completed safely within 90 days.
 
 ### request_15  MISS
-- amount_safe_to_pay: ours='0' gt='83.05'
-- explanation (ours): Do not make this payment by 1 February 2026. None of the available options keeps the EUR 1,200 minimum protected.
+- amount_safe_to_pay: ours='6.54' gt='83.05'
+- explanation (ours): Do not proceed with the EUR 3,685 request. Although EUR 6.54 is available today, the full amount cannot be completed safely within 90 days.
 - explanation (gt): Do not make this payment by 1 February 2026. None of the available options keeps the EUR 1,200 minimum protected.
 
 ### request_16  OK
@@ -126,14 +125,14 @@ Fallback rows: 0 | repaired rows: 0
 - explanation (gt): Pay EUR 3,246.10 in full on 15 September 2026. Paying earlier would take the balance below the EUR 1,400 minimum.
 
 ### request_19  MISS
-- amount_safe_to_pay: ours='30156.18' gt='28820'
-- payment_plan: ours='2024-09-04:30156.18|2024-09-15:9503.82' gt='2024-09-04:28820|2024-09-15:10840'
-- explanation (ours): Pay INR 30,156.18 today and the remaining INR 9,503.82 on 15 September 2024. This completes the full request and keeps the INR 92,800 minimum protected.
+- amount_safe_to_pay: ours='30153.59' gt='28820'
+- payment_plan: ours='2024-09-04:30153.59|2024-09-15:9506.41' gt='2024-09-04:28820|2024-09-15:10840'
+- explanation (ours): Pay INR 30,153.59 today and the remaining INR 9,506.41 on 15 September 2024. This completes the full request and keeps the INR 92,800 minimum protected.
 - explanation (gt): Pay INR 28,820 today and the remaining INR 10,840 on 15 September 2024. This completes the full request and keeps the INR 92,800 minimum protected.
 
 ### request_20  MISS
-- amount_safe_to_pay: ours='12576.59' gt='5400'
-- explanation (ours): Do not proceed with the INR 303,700 request. The available safe amount is INR 12,576.59, and paying the full request would not keep the INR 64,500 minimum balance protected.
+- amount_safe_to_pay: ours='5221.89' gt='5400'
+- explanation (ours): Do not proceed with the INR 303,700 request. Although INR 5,221.89 is available today, the full amount cannot be completed safely within 90 days.
 - explanation (gt): Do not make this payment by 22 February 2026. None of the available options keeps the INR 64,500 minimum protected.
 
 ### request_21  MISS
@@ -156,10 +155,10 @@ Fallback rows: 0 | repaired rows: 0
 
 ### request_24  MISS
 - amount_safe_to_pay: ours='17170.58' gt='13420'
-- explanation (ours): Do not proceed with the INR 109,600 request. Only INR 17,170.58 is available while protecting the INR 51,000 minimum balance, so the full request is not affordable.
+- explanation (ours): Do not proceed with the INR 109,600 request. Although INR 17,170.58 is available today, the full amount cannot be completed safely within 90 days.
 - explanation (gt): Do not proceed with the INR 109,600 request. Although INR 13,420 is available today, the full amount cannot be completed safely within 90 days.
 
 ### request_25  MISS
 - amount_safe_to_pay: ours='1546215.19' gt='1425000'
-- explanation (ours): Do not proceed with the IDR 60,496,000 request. Only IDR 1,546,215.19 is available while protecting the IDR 23,379,100 minimum balance.
+- explanation (ours): Do not proceed with the IDR 60,496,000 request. Although IDR 1,546,215.19 is available today, the full amount cannot be completed safely within 90 days.
 - explanation (gt): Do not make this payment by 17 April 2024. None of the available options keeps the IDR 23,379,100 minimum protected.
